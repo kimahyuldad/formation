@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Quarterly Smart Lineup Builder</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Smart Lineup Builder</h1>
+        <nav class="tabs">
+            <button class="tab-btn active" data-target="manageView">명단 관리</button>
+            <button class="tab-btn" data-target="boardView">작전판</button>
+            <button class="tab-btn" data-target="historyView">기록</button>
+            <button class="tab-btn" data-target="statsView">통계</button>
+        </nav>
+    </header>
+
+    <main>
+        <!-- View 1: Player Management -->
+        <section id="manageView" class="view active">
+            <div class="panel glass-panel">
+                <h2>선수 등록</h2>
+                <form id="addPlayerForm">
+                    <div class="pos-select">
+                        <input type="text" id="pName" placeholder="선수 이름" required>
+                        <input type="number" id="pBackNumber" placeholder="등번호" required>
+                    </div>
+                    <div class="pos-select">
+                        <select id="pPos1" required>
+                            <option value="" disabled selected>1지망 포지션</option>
+                            <option value="FW">포워드(ST)</option>
+                            <option value="WF">윙포워드(LW/RW)</option>
+                            <option value="CM">미드필더(CM)</option>
+                            <option value="CDM">수비형 미드필더(CDM)</option>
+                            <option value="CAM">공격형 미드필더(CAM)</option>
+                            <option value="CB">센터백(CB)</option>
+                            <option value="WB">윙백(WB/FB)</option>
+                            <option value="GK">골키퍼(GK)</option>
+                        </select>
+                        <select id="pPos2" required>
+                            <option value="" disabled selected>2지망 포지션</option>
+                            <option value="none">없음</option>
+                            <option value="FW">포워드(ST)</option>
+                            <option value="WF">윙포워드(LW/RW)</option>
+                            <option value="CM">미드필더(CM)</option>
+                            <option value="CDM">수비형 미드필더(CDM)</option>
+                            <option value="CAM">공격형 미드필더(CAM)</option>
+                            <option value="CB">센터백(CB)</option>
+                            <option value="WB">윙백(WB/FB)</option>
+                            <option value="GK">골키퍼(GK)</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="btn-primary">추가하기</button>
+                </form>
+            </div>
+
+            <div class="panel glass-panel">
+                <div class="panel-header">
+                    <h2>참석자 명단 <span id="attendanceCounter" style="font-size: 0.9rem; color: var(--accent-color); margin-left: 10px;">(0명 선택됨)</span></h2>
+                </div>
+                <div class="instruction">
+                    ✓: 참석 &nbsp; / &nbsp; ★: 핵심(3쿼터 이상 보장)
+                </div>
+                <ul id="playerList" class="player-list" style="margin-bottom: 20px;">
+                    <!-- JS populated -->
+                </ul>
+                <div style="border-top: 1px solid var(--panel-border); padding-top: 15px;">
+                    <h3>쿼터별 포메이션 선택</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0;">
+                        <div>
+                            <label style="font-size: 0.85rem;">1쿼터</label>
+                            <select id="preForm1"><option value="4231">4-2-3-1</option><option value="433">4-3-3</option><option value="352">3-5-2</option><option value="442">4-4-2</option></select>
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85rem;">2쿼터</label>
+                            <select id="preForm2"><option value="4231">4-2-3-1</option><option value="433">4-3-3</option><option value="352">3-5-2</option><option value="442">4-4-2</option></select>
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85rem;">3쿼터</label>
+                            <select id="preForm3"><option value="4231">4-2-3-1</option><option value="433">4-3-3</option><option value="352">3-5-2</option><option value="442">4-4-2</option></select>
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85rem;">4쿼터</label>
+                            <select id="preForm4"><option value="4231">4-2-3-1</option><option value="433">4-3-3</option><option value="352">3-5-2</option><option value="442">4-4-2</option></select>
+                        </div>
+                    </div>
+                    <button id="btnDistribute" class="btn-accent" style="width: 100%; margin-top: 10px;">쿼터 배분 시작</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- View 2: Formation Board -->
+        <section id="boardView" class="view">
+            <!-- 경기 정보 패널 -->
+            <div class="panel glass-panel" style="margin-bottom: 15px;">
+                <div class="match-info-row">
+                    <div class="match-info-field">
+                        <label class="match-info-label">📅 날짜</label>
+                        <input type="text" id="matchDate" class="match-info-input" placeholder="날짜 (예: 2026-04-25)">
+                    </div>
+                    <div class="match-info-field">
+                        <label class="match-info-label">🆚 상대팀</label>
+                        <input type="text" id="matchOpponent" class="match-info-input" placeholder="상대팀 이름">
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel glass-panel">
+                <h2>오늘의 출전 명단</h2>
+                <div id="masterList" style="display:flex; flex-wrap:wrap; gap:8px;">
+                    <!-- JS populated -->
+                </div>
+            </div>
+
+            <div id="captureArea" class="board-grid">
+                <!-- JS populated 4 quarters -->
+            </div>
+
+            <div class="export-actions panel glass-panel">
+                <button id="btnSaveImage" class="btn-accent" style="width:100%">★ 전체 작전판 이미지 저장 (공유용) ★</button>
+                <div style="margin-top:10px;">
+                    <button id="btnSaveData" class="btn-primary" style="width:100%;">데이터베이스에 전체 저장</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- View 3: History -->
+        <section id="historyView" class="view">
+            <div class="panel glass-panel">
+                <h2>저장된 라인업 히스토리</h2>
+                <ul id="historyList" class="history-list">
+                    <!-- JS populated -->
+                </ul>
+            </div>
+        </section>
+
+        <!-- View 4: Stats -->
+        <section id="statsView" class="view">
+            <div class="panel glass-panel">
+                <h2>선수 통계</h2>
+                <div class="table-responsive">
+                    <table class="stats-table">
+                        <thead>
+                            <tr>
+                                <th>이름<br><span style="font-size:0.75rem; font-weight:400;">(등번호)</span></th>
+                                <th>출전 일수</th>
+                                <th>출전 시간 (분)</th>
+                                <th>기록 삭제</th>
+                            </tr>
+                        </thead>
+                        <tbody id="statsBody">
+                            <!-- JS populated -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

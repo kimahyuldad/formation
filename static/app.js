@@ -516,7 +516,7 @@ function renderQuarterPlayers(q) {
             el.style.left = `${pos.x}%`;
             el.style.top = `${pos.y}%`;
             
-            el.addEventListener('click', () => handleSwapClick(pid, q, 'pitch'));
+            makeDraggable(el, q, pid, pitch);
             pitch.appendChild(el);
         }
     });
@@ -546,6 +546,68 @@ function renderQuarterPlayers(q) {
             el.addEventListener('click', () => handleSwapClick(player.id, q, 'bench'));
             bench.appendChild(el);
         }
+    });
+}
+
+function makeDraggable(el, q, pid, pitch) {
+    let isDragging = false;
+    let startX, startY;
+    let startLeft, startTop;
+
+    el.addEventListener('pointerdown', (e) => {
+        // 좌클릭 또는 터치만 허용
+        if (e.button !== undefined && e.button !== 0) return;
+        
+        isDragging = false;
+        startX = e.clientX;
+        startY = e.clientY;
+        startLeft = parseFloat(el.style.left) || 50;
+        startTop = parseFloat(el.style.top) || 50;
+        
+        el.setPointerCapture(e.pointerId);
+
+        function onPointerMove(ev) {
+            let dx = ev.clientX - startX;
+            let dy = ev.clientY - startY;
+            if (!isDragging && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+                isDragging = true;
+            }
+            if (!isDragging) return;
+
+            let rect = pitch.getBoundingClientRect();
+            let newLeft = startLeft + (dx / rect.width) * 100;
+            let newTop = startTop + (dy / rect.height) * 100;
+
+            // 제한 (0 ~ 100%)
+            newLeft = Math.max(0, Math.min(100, newLeft));
+            newTop = Math.max(0, Math.min(100, newTop));
+
+            el.style.left = newLeft + '%';
+            el.style.top = newTop + '%';
+        }
+
+        function onPointerUp(ev) {
+            el.removeEventListener('pointermove', onPointerMove);
+            el.removeEventListener('pointerup', onPointerUp);
+            el.removeEventListener('pointercancel', onPointerUp);
+            el.releasePointerCapture(e.pointerId);
+
+            if (isDragging) {
+                // 드래그 종료 시 새로운 위치 저장
+                quarterPositions[q][pid] = {
+                    x: parseFloat(el.style.left),
+                    y: parseFloat(el.style.top)
+                };
+                isMatchSaved = false;
+            } else {
+                // 드래그가 아니었으면 클릭으로 간주하여 교체 로직 실행
+                handleSwapClick(pid, q, 'pitch');
+            }
+        }
+
+        el.addEventListener('pointermove', onPointerMove);
+        el.addEventListener('pointerup', onPointerUp);
+        el.addEventListener('pointercancel', onPointerUp);
     });
 }
 

@@ -122,7 +122,18 @@
             </div>
 
             <div class="export-actions panel glass-panel">
-                <button id="btnSaveImage" class="btn-accent" style="width:100%">★ 전체 작전판 이미지 저장 (공유용) ★</button>
+                <!-- 포메이션 저장/불러오기 -->
+                <div class="formation-save-section">
+                    <h3 class="formation-save-title">📁 포메이션 저장 / 불러오기</h3>
+                    <div class="formation-save-row">
+                        <input type="text" id="formationSaveName" placeholder="저장 이름 입력 (예: 4쿼터 수비형)" class="formation-save-input">
+                        <button id="btnSaveFormation" class="btn-save-formation">💾 저장</button>
+                    </div>
+                    <div id="savedFormationList" class="saved-formation-list">
+                        <!-- JS populated -->
+                    </div>
+                </div>
+                <button id="btnSaveImage" class="btn-accent" style="width:100%; margin-top:10px;">★ 전체 작전판 이미지 저장 (공유용) ★</button>
                 <div style="margin-top:10px;">
                     <button id="btnSaveData" class="btn-primary" style="width:100%;">데이터베이스에 전체 저장</button>
                 </div>
@@ -142,7 +153,10 @@
         <!-- View 4: Stats -->
         <section id="statsView" class="view">
             <div class="panel glass-panel">
-                <h2>선수 통계</h2>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                    <h2 style="margin:0;">선수 통계</h2>
+                    <button id="btnDeleteAllStats" class="btn-delete-all">🗑️ 전체 기록 일괄삭제</button>
+                </div>
                 <div class="table-responsive">
                     <table class="stats-table">
                         <thead>

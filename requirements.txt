@@ -3,3 +3,5 @@ uvicorn
 jinja2
 pydantic
 python-multipart
+psycopg2-binary
+python-dotenv

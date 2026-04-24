@@ -156,6 +156,27 @@ document.addEventListener('DOMContentLoaded', () => {
         alert('저장 완료! (확정된 쿼터의 기록이 통계에 반영되었습니다)');
         fetchMatches();
     });
+
+    // 포메이션 저장 버튼
+    document.getElementById('btnSaveFormation').addEventListener('click', async () => {
+        const label = document.getElementById('formationSaveName').value.trim();
+        if (!label) return alert('저장 이름을 입력해주세요.');
+        const formationData = {
+            formations: quarterFormations,
+            memos: quarterMemos,
+            allocations: allocatedQuarters,
+            positions: quarterPositions,
+            confirmed: Array.from(confirmedQuarters)
+        };
+        await fetch(`${API_BASE}/formations/saved`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ label, formation_data: formationData })
+        });
+        document.getElementById('formationSaveName').value = '';
+        alert(`"${label}" 포메이션이 저장되었습니다!`);
+        fetchSavedFormations();
+    });
 });
 
 function initTabs() {
@@ -167,6 +188,7 @@ function initTabs() {
             document.getElementById(e.target.dataset.target).classList.add('active');
             if (e.target.dataset.target === 'boardView') {
                 renderAllQuarters();
+                fetchSavedFormations();
             } else if (e.target.dataset.target === 'statsView') {
                 fetchStats();
             }
@@ -189,12 +211,15 @@ async function fetchMatches() {
         <li style="flex-direction: column; gap: 10px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <strong>${h.date_str} vs ${h.opponent || '자체전'}</strong>
-                <select class="match-result-select" data-id="${h.id}" style="width:auto; margin-bottom:0; padding:4px 8px;">
-                    <option value="" ${!h.result ? 'selected' : ''}>결과 선택</option>
-                    <option value="승" ${h.result === '승' ? 'selected' : ''}>승리</option>
-                    <option value="무" ${h.result === '무' ? 'selected' : ''}>무승부</option>
-                    <option value="패" ${h.result === '패' ? 'selected' : ''}>패배</option>
-                </select>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <select class="match-result-select" data-id="${h.id}" style="width:auto; margin-bottom:0; padding:4px 8px;">
+                        <option value="" ${!h.result ? 'selected' : ''}>결과 선택</option>
+                        <option value="승" ${h.result === '승' ? 'selected' : ''}>승리</option>
+                        <option value="무" ${h.result === '무' ? 'selected' : ''}>무승부</option>
+                        <option value="패" ${h.result === '패' ? 'selected' : ''}>패배</option>
+                    </select>
+                    <button class="btn-delete-match" data-id="${h.id}" title="경기 기록 삭제">🗑️</button>
+                </div>
             </div>
             <div style="display:flex; gap:10px;">
                 <input type="text" class="match-memo-input" data-id="${h.id}" value="${h.memo || ''}" placeholder="경기 메모 (예: 폭우, 부상자 다수)" style="margin-bottom:0;">
@@ -216,6 +241,16 @@ async function fetchMatches() {
                 body: JSON.stringify({ result, memo })
             });
             alert('기록이 저장되었습니다.');
+        });
+    });
+
+    document.querySelectorAll('.btn-delete-match').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const matchId = e.target.closest('button').dataset.id;
+            if (confirm('이 경기 기록을 삭제하시겠습니까?\n(해당 경기의 통계 기록도 함께 삭제됩니다)')) {
+                await fetch(`${API_BASE}/matches/${matchId}`, { method: 'DELETE' });
+                fetchMatches();
+            }
         });
     });
 }
@@ -629,4 +664,101 @@ async function fetchStats() {
             }
         });
     });
+
+    // 일괄 삭제 버튼 이벤트
+    const btnDeleteAll = document.getElementById('btnDeleteAllStats');
+    if (btnDeleteAll) {
+        btnDeleteAll.onclick = async () => {
+            if (finalStats.length === 0) return alert('삭제할 기록이 없습니다.');
+            if (confirm(`모든 선수(${finalStats.length}명)의 통계 기록을 일괄 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
+                for (const s of finalStats) {
+                    await fetch(`${API_BASE}/players/${s.id}/stats`, { method: 'DELETE' });
+                }
+                alert('모든 통계 기록이 삭제되었습니다.');
+                fetchStats();
+            }
+        };
+    }
+}
+
+// -------- Saved Formations --------
+
+async function fetchSavedFormations() {
+    const res = await fetch(`${API_BASE}/formations/saved`);
+    const list = await res.json();
+    const container = document.getElementById('savedFormationList');
+    if (!container) return;
+    
+    if (list.length === 0) {
+        container.innerHTML = '<div class="saved-formation-empty">저장된 포메이션이 없습니다.</div>';
+        return;
+    }
+
+    container.innerHTML = list.map(f => `
+        <div class="saved-formation-item" data-id="${f.id}">
+            <div class="saved-formation-info">
+                <span class="saved-formation-label">${f.label}</span>
+                <span class="saved-formation-date">${f.created_at || ''}</span>
+            </div>
+            <div class="saved-formation-actions">
+                <button class="btn-load-formation" data-id="${f.id}">📂 불러오기</button>
+                <button class="btn-del-formation" data-id="${f.id}">🗑️</button>
+            </div>
+        </div>
+    `).join('');
+
+    container.querySelectorAll('.btn-load-formation').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const fid = parseInt(btn.dataset.id);
+            const found = list.find(f => f.id === fid);
+            if (!found) return;
+            loadSavedFormation(found.formation_data);
+        });
+    });
+
+    container.querySelectorAll('.btn-del-formation').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const fid = btn.dataset.id;
+            if (confirm('이 포메이션을 삭제하시겠습니까?')) {
+                await fetch(`${API_BASE}/formations/saved/${fid}`, { method: 'DELETE' });
+                fetchSavedFormations();
+            }
+        });
+    });
+}
+
+function loadSavedFormation(data) {
+    if (data.formations) {
+        for (const [q, f] of Object.entries(data.formations)) {
+            quarterFormations[Number(q)] = f;
+            // 명단 관리탭 포메이션 드롭다운도 동기화
+            const pf = document.getElementById(`preForm${q}`);
+            if (pf) pf.value = f;
+        }
+    }
+    if (data.memos) {
+        for (const [q, m] of Object.entries(data.memos)) {
+            quarterMemos[Number(q)] = m;
+        }
+    }
+    if (data.allocations) {
+        allocatedQuarters = { 1: [], 2: [], 3: [], 4: [] };
+        for (const [q, ids] of Object.entries(data.allocations)) {
+            allocatedQuarters[Number(q)] = ids.map(id => Number(id));
+        }
+    }
+    if (data.positions) {
+        quarterPositions = { 1: {}, 2: {}, 3: {}, 4: {} };
+        for (const [q, posMap] of Object.entries(data.positions)) {
+            quarterPositions[Number(q)] = {};
+            for (const [pid, pos] of Object.entries(posMap)) {
+                quarterPositions[Number(q)][Number(pid)] = pos;
+            }
+        }
+    }
+    if (data.confirmed) {
+        confirmedQuarters = new Set(data.confirmed.map(Number));
+    }
+    alert('포메이션을 불러왔습니다!');
+    renderAllQuarters();
 }

@@ -1,21 +1,23 @@
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import json
 import os
+from dotenv import load_dotenv
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'lineup.db')
+load_dotenv()
+
+DB_URL = os.environ.get("DATABASE_URL")
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(DB_URL)
     return conn
 
 def init_db():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = get_db()
     c = conn.cursor()
     c.execute('''
         CREATE TABLE IF NOT EXISTS players (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             name TEXT UNIQUE,
             pos1 TEXT,
             pos2 TEXT,
@@ -25,7 +27,7 @@ def init_db():
     ''')
     c.execute('''
         CREATE TABLE IF NOT EXISTS matches (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             name TEXT,
             date_str TEXT,
             lineup_data TEXT,
@@ -34,28 +36,42 @@ def init_db():
             memo TEXT DEFAULT ''
         )
     ''')
-    # 기존 DB에 컬럼이 없을 경우 안전하게 추가
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS saved_formations (
+            id SERIAL PRIMARY KEY,
+            label TEXT,
+            formation_data TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Check and add columns if they don't exist
     for col, default in [('opponent', "''"), ('result', "''"), ('memo', "''")]:
         try:
             c.execute(f"ALTER TABLE matches ADD COLUMN {col} TEXT DEFAULT {default}")
-        except Exception:
-            pass
+        except psycopg2.Error:
+            conn.rollback() # Need to rollback failed transaction in Postgres
+        else:
+            conn.commit()
     conn.commit()
+    c.close()
     conn.close()
 
 def fetch_players():
     conn = get_db()
-    c = conn.cursor()
+    c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     c.execute('SELECT * FROM players ORDER BY name')
     rows = c.fetchall()
+    c.close()
     conn.close()
     return [dict(r) for r in rows]
 
 def get_player(p_id):
     conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT * FROM players WHERE id=?', (p_id,))
+    c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    c.execute('SELECT * FROM players WHERE id=%s', (p_id,))
     row = c.fetchone()
+    c.close()
     conn.close()
     return dict(row) if row else None
 
@@ -65,13 +81,15 @@ def add_player(data):
     try:
         c.execute('''
             INSERT INTO players (name, pos1, pos2, is_core, back_number)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s) RETURNING id
         ''', (data.get('name'), data.get('pos1'), data.get('pos2'), data.get('is_core', 0), data.get('back_number', '')))
-        player_id = c.lastrowid
+        player_id = c.fetchone()[0]
         conn.commit()
-    except sqlite3.IntegrityError:
+    except psycopg2.IntegrityError:
+        conn.rollback()
         player_id = None
     finally:
+        c.close()
         conn.close()
     return player_id
 
@@ -80,25 +98,29 @@ def update_player(p_id, data):
     c = conn.cursor()
     c.execute('''
         UPDATE players
-        SET name=?, pos1=?, pos2=?, is_core=?, back_number=?
-        WHERE id=?
+        SET name=%s, pos1=%s, pos2=%s, is_core=%s, back_number=%s
+        WHERE id=%s
     ''', (data.get('name'), data.get('pos1'), data.get('pos2'), data.get('is_core'), data.get('back_number'), p_id))
     conn.commit()
+    c.close()
     conn.close()
 
 def delete_player(p_id):
     conn = get_db()
     c = conn.cursor()
-    c.execute('DELETE FROM players WHERE id=?', (p_id,))
+    c.execute('DELETE FROM players WHERE id=%s', (p_id,))
     conn.commit()
+    c.close()
     conn.close()
 
 def delete_player_stats(p_id):
     """선수의 통계 기록만 삭제 (경기 데이터에서 해당 선수 제거, 선수 정보는 유지)"""
     conn = get_db()
-    c = conn.cursor()
+    c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     c.execute('SELECT id, lineup_data FROM matches')
     rows = c.fetchall()
+    
+    update_cursor = conn.cursor()
     for row in rows:
         try:
             data = json.loads(row['lineup_data'])
@@ -111,10 +133,12 @@ def delete_player_stats(p_id):
                     changed = True
             if changed:
                 data['allocations'] = allocs
-                c.execute('UPDATE matches SET lineup_data=? WHERE id=?', (json.dumps(data), row['id']))
+                update_cursor.execute('UPDATE matches SET lineup_data=%s WHERE id=%s', (json.dumps(data), row['id']))
         except Exception:
             pass
     conn.commit()
+    c.close()
+    update_cursor.close()
     conn.close()
 
 def save_match(name, date_str, lineup_data, opponent='', result='', memo=''):
@@ -122,10 +146,11 @@ def save_match(name, date_str, lineup_data, opponent='', result='', memo=''):
     c = conn.cursor()
     c.execute('''
         INSERT INTO matches (name, date_str, lineup_data, opponent, result, memo)
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
     ''', (name, date_str, json.dumps(lineup_data), opponent, result, memo))
-    match_id = c.lastrowid
+    match_id = c.fetchone()[0]
     conn.commit()
+    c.close()
     conn.close()
     return match_id
 
@@ -133,32 +158,36 @@ def update_match(match_id, name, date_str, lineup_data, opponent='', result='', 
     conn = get_db()
     c = conn.cursor()
     c.execute('''
-        UPDATE matches SET name=?, date_str=?, lineup_data=?, opponent=?, result=?, memo=?
-        WHERE id=?
+        UPDATE matches SET name=%s, date_str=%s, lineup_data=%s, opponent=%s, result=%s, memo=%s
+        WHERE id=%s
     ''', (name, date_str, json.dumps(lineup_data), opponent, result, memo, match_id))
     conn.commit()
+    c.close()
     conn.close()
 
 def update_match_result_memo(match_id, result, memo):
     conn = get_db()
     c = conn.cursor()
-    c.execute('UPDATE matches SET result=?, memo=? WHERE id=?', (result, memo, match_id))
+    c.execute('UPDATE matches SET result=%s, memo=%s WHERE id=%s', (result, memo, match_id))
     conn.commit()
+    c.close()
     conn.close()
 
 def fetch_matches():
     conn = get_db()
-    c = conn.cursor()
+    c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     c.execute('SELECT id, name, date_str, opponent, result, memo FROM matches ORDER BY id DESC')
     rows = c.fetchall()
+    c.close()
     conn.close()
     return [dict(r) for r in rows]
 
 def fetch_all_matches():
     conn = get_db()
-    c = conn.cursor()
+    c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     c.execute('SELECT * FROM matches ORDER BY id DESC')
     rows = c.fetchall()
+    c.close()
     conn.close()
     ret = []
     for row in rows:
@@ -169,12 +198,56 @@ def fetch_all_matches():
 
 def get_match(m_id):
     conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT * FROM matches WHERE id=?', (m_id,))
+    c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    c.execute('SELECT * FROM matches WHERE id=%s', (m_id,))
     row = c.fetchone()
+    c.close()
     conn.close()
     if row:
         d = dict(row)
         d['lineup_data'] = json.loads(d['lineup_data'])
         return d
     return None
+
+def delete_match(m_id):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('DELETE FROM matches WHERE id=%s', (m_id,))
+    conn.commit()
+    c.close()
+    conn.close()
+
+# -------- Saved Formations --------
+
+def fetch_saved_formations():
+    conn = get_db()
+    c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    c.execute('SELECT * FROM saved_formations ORDER BY id DESC')
+    rows = c.fetchall()
+    c.close()
+    conn.close()
+    ret = []
+    for row in rows:
+        d = dict(row)
+        d['formation_data'] = json.loads(d['formation_data'])
+        ret.append(d)
+    return ret
+
+def save_formation(label, formation_data):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('INSERT INTO saved_formations (label, formation_data) VALUES (%s, %s) RETURNING id',
+              (label, json.dumps(formation_data)))
+    fid = c.fetchone()[0]
+    conn.commit()
+    c.close()
+    conn.close()
+    return fid
+
+def delete_saved_formation(fid):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('DELETE FROM saved_formations WHERE id=%s', (fid,))
+    conn.commit()
+    c.close()
+    conn.close()

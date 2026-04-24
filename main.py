@@ -27,6 +27,7 @@ class PlayerModel(BaseModel):
     pos2: str
     is_core: int
     back_number: str
+    team_name: str = '쌍팔클럽'
 
 class LineupRequestModel(BaseModel):
     attendance_ids: List[int]
@@ -39,6 +40,7 @@ class SaveMatchModel(BaseModel):
     opponent: Optional[str] = ''
     result: Optional[str] = ''
     memo: Optional[str] = ''
+    team_name: str = '쌍팔클럽'
 
 class PatchMatchModel(BaseModel):
     result: Optional[str] = ''
@@ -47,14 +49,15 @@ class PatchMatchModel(BaseModel):
 class SaveFormationModel(BaseModel):
     label: str
     formation_data: Dict[str, Any]
+    team_name: str = '쌍팔클럽'
 
 @app.get("/api/players")
-def read_players():
-    return database.fetch_players()
+def read_players(team: str = '쌍팔클럽'):
+    return database.fetch_players(team)
 
 @app.post("/api/players")
 def create_player(player: PlayerModel):
-    pid = database.add_player(player.dict())
+    pid = database.add_player(player.dict(), player.team_name)
     if pid is None:
         return {"error": "Failed to add player (maybe duplicate name)"}
     return {"id": pid}
@@ -76,20 +79,20 @@ def remove_player_stats(player_id: int):
     return {"status": "ok"}
 
 @app.post("/api/distribute")
-def distribute_quarters(req: LineupRequestModel):
-    all_players = database.fetch_players()
+def distribute_quarters(req: LineupRequestModel, team: str = '쌍팔클럽'):
+    all_players = database.fetch_players(team)
     gk_ids = [p['id'] for p in all_players if p['pos1'] == 'GK' or p['pos2'] == 'GK']
     allocations = logic.distribute_quarters(req.attendance_ids, req.core_ids, gk_ids)
     return allocations
 
 @app.get("/api/matches")
-def read_matches():
-    return database.fetch_matches()
+def read_matches(team: str = '쌍팔클럽'):
+    return database.fetch_matches(team)
 
 @app.get("/api/stats")
-def read_stats():
-    matches = database.fetch_all_matches()
-    players = database.fetch_players()
+def read_stats(team: str = '쌍팔클럽'):
+    matches = database.fetch_all_matches(team)
+    players = database.fetch_players(team)
 
     stats = {}
     for p in players:
@@ -119,7 +122,7 @@ def read_stats():
 def create_match(match: SaveMatchModel):
     mid = database.save_match(
         match.name, match.date_str, match.lineup_data,
-        match.opponent, match.result, match.memo
+        match.opponent, match.result, match.memo, match.team_name
     )
     return {"id": mid}
 
@@ -148,12 +151,12 @@ def read_match(match_id: int):
 # -------- Saved Formations API --------
 
 @app.get("/api/formations/saved")
-def list_saved_formations():
-    return database.fetch_saved_formations()
+def list_saved_formations(team: str = '쌍팔클럽'):
+    return database.fetch_saved_formations(team)
 
 @app.post("/api/formations/saved")
 def create_saved_formation(data: SaveFormationModel):
-    fid = database.save_formation(data.label, data.formation_data)
+    fid = database.save_formation(data.label, data.formation_data, data.team_name)
     return {"id": fid}
 
 @app.delete("/api/formations/saved/{fid}")

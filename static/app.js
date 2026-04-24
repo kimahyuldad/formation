@@ -1,5 +1,21 @@
 const API_BASE = '/api';
 
+let currentTeam = localStorage.getItem('lineup_team') || '쌍팔클럽';
+let myTeams = JSON.parse(localStorage.getItem('my_teams')) || ['쌍팔클럽'];
+if (!myTeams.includes(currentTeam)) { myTeams.push(currentTeam); }
+
+// ▶ 구버전 localStorage 키 자동 마이그레이션 (최초 1회)
+(function migrateOldLocalStorage() {
+    const oldAtt = localStorage.getItem('lineup_attendances');
+    const oldCores = localStorage.getItem('lineup_cores');
+    const migrated = localStorage.getItem('ls_migrated_v2');
+    if (!migrated) {
+        if (oldAtt) localStorage.setItem('lineup_attendances_쌍팔클럽', oldAtt);
+        if (oldCores) localStorage.setItem('lineup_cores_쌍팔클럽', oldCores);
+        localStorage.setItem('ls_migrated_v2', '1');
+    }
+})();
+
 let players = [];
 let attendances = new Set();
 let cores = new Set();
@@ -20,13 +36,15 @@ function updateAttendanceCounter() {
 
 // Persistence logic
 function saveToLocal() {
-    localStorage.setItem('lineup_attendances', JSON.stringify(Array.from(attendances)));
-    localStorage.setItem('lineup_cores', JSON.stringify(Array.from(cores)));
+    localStorage.setItem('lineup_attendances_' + currentTeam, JSON.stringify(Array.from(attendances)));
+    localStorage.setItem('lineup_cores_' + currentTeam, JSON.stringify(Array.from(cores)));
 }
 
 function loadFromLocal() {
-    const savedAtt = localStorage.getItem('lineup_attendances');
-    const savedCores = localStorage.getItem('lineup_cores');
+    attendances.clear();
+    cores.clear();
+    const savedAtt = localStorage.getItem('lineup_attendances_' + currentTeam);
+    const savedCores = localStorage.getItem('lineup_cores_' + currentTeam);
     if (savedAtt) {
         try {
             JSON.parse(savedAtt).forEach(id => { if(id) attendances.add(Number(id)); });
@@ -52,6 +70,54 @@ const formationTemplates = {
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('matchDate').value = new Date().toISOString().split('T')[0];
     initTabs();
+    
+    // Team UI Initialization
+    const teamSel = document.getElementById('teamSelector');
+
+    function renderTeamSelector() {
+        teamSel.innerHTML = myTeams.map(t => `<option value="${t}" ${t === currentTeam ? 'selected' : ''}>${t}</option>`).join('');
+    }
+
+    function switchTeam(newTeam) {
+        currentTeam = newTeam;
+        localStorage.setItem('lineup_team', currentTeam);
+        loadFromLocal();
+        // 즉시 화면 초기화
+        players = [];
+        document.getElementById('playerList').innerHTML = '';
+        updateAttendanceCounter();
+        fetchPlayers();
+        fetchMatches();
+        fetchSavedFormations();
+    }
+
+    renderTeamSelector();
+
+    teamSel.addEventListener('change', (e) => {
+        switchTeam(e.target.value);
+    });
+
+    document.getElementById('btnAddTeam').addEventListener('click', () => {
+        const newTeam = document.getElementById('newTeamInput').value.trim();
+        if (!newTeam) return;
+        if (!myTeams.includes(newTeam)) {
+            myTeams.push(newTeam);
+            localStorage.setItem('my_teams', JSON.stringify(myTeams));
+        }
+        document.getElementById('newTeamInput').value = '';
+        renderTeamSelector();
+        switchTeam(newTeam);
+    });
+
+    document.getElementById('btnDeleteTeam').addEventListener('click', () => {
+        if (myTeams.length <= 1) return alert('마지막 팀은 삭제할 수 없습니다.');
+        if (!confirm(`"${currentTeam}" 팀을 목록에서 삭제하시겠습니까?\n(서버의 선수 및 기록 데이터는 삭제되지 않습니다)`)) return;
+        myTeams = myTeams.filter(t => t !== currentTeam);
+        localStorage.setItem('my_teams', JSON.stringify(myTeams));
+        renderTeamSelector();
+        switchTeam(myTeams[0]);
+    });
+
     fetchPlayers();
     fetchMatches();
     
@@ -62,7 +128,8 @@ document.addEventListener('DOMContentLoaded', () => {
             pos1: document.getElementById('pPos1').value,
             pos2: document.getElementById('pPos2').value,
             is_core: 0,
-            back_number: document.getElementById('pBackNumber').value
+            back_number: document.getElementById('pBackNumber').value,
+            team_name: currentTeam
         };
         if (editingPlayerId) {
             await fetch(`${API_BASE}/players/${editingPlayerId}`, {
@@ -88,23 +155,28 @@ document.addEventListener('DOMContentLoaded', () => {
         for(let q=1; q<=4; q++) {
             quarterFormations[q] = document.getElementById(`preForm${q}`).value;
         }
-        const res = await fetch(`${API_BASE}/distribute`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ attendance_ids: Array.from(attendances), core_ids: Array.from(cores) })
-        });
-        const rawResult = await res.json();
-        // JSON 키는 항상 문자열로 오므로 숫자 키로 변환
-        allocatedQuarters = { 1: [], 2: [], 3: [], 4: [] };
-        for (const [key, val] of Object.entries(rawResult)) {
-            allocatedQuarters[Number(key)] = val.map(id => Number(id));
+        try {
+            const res = await fetch(`${API_BASE}/distribute?team=${encodeURIComponent(currentTeam)}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ attendance_ids: Array.from(attendances), core_ids: Array.from(cores) })
+            });
+            if (!res.ok) throw new Error(`서버 오류: ${res.status}`);
+            const rawResult = await res.json();
+            allocatedQuarters = { 1: [], 2: [], 3: [], 4: [] };
+            for (const [key, val] of Object.entries(rawResult)) {
+                allocatedQuarters[Number(key)] = val.map(id => Number(id));
+            }
+            quarterPositions = { 1: {}, 2: {}, 3: {}, 4: {} }; 
+            confirmedQuarters.clear();
+            isMatchSaved = false;
+            autoPlaceAllQuarters();
+            document.querySelector('[data-target="boardView"]').click();
+            renderAllQuarters();
+        } catch(e) {
+            alert('쿼터 배분 중 오류 발생: ' + e.message);
+            console.error('distribute error:', e);
         }
-        quarterPositions = { 1: {}, 2: {}, 3: {}, 4: {} }; 
-        confirmedQuarters.clear();
-        isMatchSaved = false;
-        autoPlaceAllQuarters();
-        document.querySelector('[data-target="boardView"]').click();
-        renderAllQuarters();
     });
 
     document.getElementById('btnSaveImage').addEventListener('click', async () => {
@@ -145,7 +217,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 allocations: filteredAllocations, 
                 positions: quarterPositions,
                 confirmed: Array.from(confirmedQuarters)
-            }
+            },
+            team_name: currentTeam
         };
         await fetch(`${API_BASE}/matches`, {
             method: 'POST',
@@ -171,7 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetch(`${API_BASE}/formations/saved`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ label, formation_data: formationData })
+            body: JSON.stringify({ label, formation_data: formationData, team_name: currentTeam })
         });
         document.getElementById('formationSaveName').value = '';
         alert(`"${label}" 포메이션이 저장되었습니다!`);
@@ -197,14 +270,14 @@ function initTabs() {
 }
 
 async function fetchPlayers() {
-    const res = await fetch(`${API_BASE}/players`);
+    const res = await fetch(`${API_BASE}/players?team=${encodeURIComponent(currentTeam)}`);
     players = await res.json();
     renderPlayerList();
     updateAttendanceCounter();
 }
 
 async function fetchMatches() {
-    const res = await fetch(`${API_BASE}/matches`);
+    const res = await fetch(`${API_BASE}/matches?team=${encodeURIComponent(currentTeam)}`);
     const history = await res.json();
     const ul = document.getElementById('historyList');
     ul.innerHTML = history.map(h => `
@@ -665,7 +738,7 @@ function handleSwapClick(pid, q, type) {
 }
 
 async function fetchStats() {
-    const res = await fetch(`${API_BASE}/stats`);
+    const res = await fetch(`${API_BASE}/stats?team=${encodeURIComponent(currentTeam)}`);
     const dbStats = await res.json();
     
     let localStats = {};
@@ -746,7 +819,7 @@ async function fetchStats() {
 // -------- Saved Formations --------
 
 async function fetchSavedFormations() {
-    const res = await fetch(`${API_BASE}/formations/saved`);
+    const res = await fetch(`${API_BASE}/formations/saved?team=${encodeURIComponent(currentTeam)}`);
     const list = await res.json();
     const container = document.getElementById('savedFormationList');
     if (!container) return;

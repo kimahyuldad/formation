@@ -22,7 +22,8 @@ def init_db():
             pos1 TEXT,
             pos2 TEXT,
             is_core INTEGER DEFAULT 0,
-            back_number TEXT DEFAULT ''
+            back_number TEXT DEFAULT '',
+            team_name TEXT DEFAULT '쌍팔클럽'
         )
     ''')
     c.execute('''
@@ -33,7 +34,8 @@ def init_db():
             lineup_data TEXT,
             opponent TEXT DEFAULT '',
             result TEXT DEFAULT '',
-            memo TEXT DEFAULT ''
+            memo TEXT DEFAULT '',
+            team_name TEXT DEFAULT '쌍팔클럽'
         )
     ''')
     c.execute('''
@@ -41,26 +43,34 @@ def init_db():
             id SERIAL PRIMARY KEY,
             label TEXT,
             formation_data TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            team_name TEXT DEFAULT '쌍팔클럽'
         )
     ''')
     conn.commit() # Commit table creations first
     
-    # Check and add columns if they don't exist
+    # Add new columns to existing tables if they don't exist
     for col, default in [('opponent', "''"), ('result', "''"), ('memo', "''")]:
         try:
             c.execute(f"ALTER TABLE matches ADD COLUMN {col} TEXT DEFAULT {default}")
             conn.commit()
         except psycopg2.Error:
-            conn.rollback() # Only rollback the failed ALTER statement
+            conn.rollback()
+            
+    for table in ['players', 'matches', 'saved_formations']:
+        try:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN team_name TEXT DEFAULT '쌍팔클럽'")
+            conn.commit()
+        except psycopg2.Error:
+            conn.rollback()
             
     c.close()
     conn.close()
 
-def fetch_players():
+def fetch_players(team_name='쌍팔클럽'):
     conn = get_db()
     c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    c.execute('SELECT * FROM players ORDER BY name')
+    c.execute('SELECT * FROM players WHERE team_name=%s ORDER BY name', (team_name,))
     rows = c.fetchall()
     c.close()
     conn.close()
@@ -75,14 +85,16 @@ def get_player(p_id):
     conn.close()
     return dict(row) if row else None
 
-def add_player(data):
+def add_player(data, team_name='쌍팔클럽'):
     conn = get_db()
     c = conn.cursor()
     try:
+        # Note: name + team_name combination should ideally be unique, but for now we keep UNIQUE on name overall or just let it fail if same name exists. 
+        # Actually, let's remove UNIQUE on name from schema in the future, but for now just try inserting.
         c.execute('''
-            INSERT INTO players (name, pos1, pos2, is_core, back_number)
-            VALUES (%s, %s, %s, %s, %s) RETURNING id
-        ''', (data.get('name'), data.get('pos1'), data.get('pos2'), data.get('is_core', 0), data.get('back_number', '')))
+            INSERT INTO players (name, pos1, pos2, is_core, back_number, team_name)
+            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
+        ''', (data.get('name'), data.get('pos1'), data.get('pos2'), data.get('is_core', 0), data.get('back_number', ''), team_name))
         player_id = c.fetchone()[0]
         conn.commit()
     except psycopg2.IntegrityError:
@@ -141,13 +153,13 @@ def delete_player_stats(p_id):
     update_cursor.close()
     conn.close()
 
-def save_match(name, date_str, lineup_data, opponent='', result='', memo=''):
+def save_match(name, date_str, lineup_data, opponent='', result='', memo='', team_name='쌍팔클럽'):
     conn = get_db()
     c = conn.cursor()
     c.execute('''
-        INSERT INTO matches (name, date_str, lineup_data, opponent, result, memo)
-        VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
-    ''', (name, date_str, json.dumps(lineup_data), opponent, result, memo))
+        INSERT INTO matches (name, date_str, lineup_data, opponent, result, memo, team_name)
+        VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+    ''', (name, date_str, json.dumps(lineup_data), opponent, result, memo, team_name))
     match_id = c.fetchone()[0]
     conn.commit()
     c.close()
@@ -173,19 +185,19 @@ def update_match_result_memo(match_id, result, memo):
     c.close()
     conn.close()
 
-def fetch_matches():
+def fetch_matches(team_name='쌍팔클럽'):
     conn = get_db()
     c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    c.execute('SELECT id, name, date_str, opponent, result, memo FROM matches ORDER BY id DESC')
+    c.execute('SELECT id, name, date_str, opponent, result, memo FROM matches WHERE team_name=%s ORDER BY id DESC', (team_name,))
     rows = c.fetchall()
     c.close()
     conn.close()
     return [dict(r) for r in rows]
 
-def fetch_all_matches():
+def fetch_all_matches(team_name='쌍팔클럽'):
     conn = get_db()
     c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    c.execute('SELECT * FROM matches ORDER BY id DESC')
+    c.execute('SELECT * FROM matches WHERE team_name=%s ORDER BY id DESC', (team_name,))
     rows = c.fetchall()
     c.close()
     conn.close()
@@ -219,10 +231,10 @@ def delete_match(m_id):
 
 # -------- Saved Formations --------
 
-def fetch_saved_formations():
+def fetch_saved_formations(team_name='쌍팔클럽'):
     conn = get_db()
     c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    c.execute('SELECT * FROM saved_formations ORDER BY id DESC')
+    c.execute('SELECT * FROM saved_formations WHERE team_name=%s ORDER BY id DESC', (team_name,))
     rows = c.fetchall()
     c.close()
     conn.close()
@@ -233,11 +245,11 @@ def fetch_saved_formations():
         ret.append(d)
     return ret
 
-def save_formation(label, formation_data):
+def save_formation(label, formation_data, team_name='쌍팔클럽'):
     conn = get_db()
     c = conn.cursor()
-    c.execute('INSERT INTO saved_formations (label, formation_data) VALUES (%s, %s) RETURNING id',
-              (label, json.dumps(formation_data)))
+    c.execute('INSERT INTO saved_formations (label, formation_data, team_name) VALUES (%s, %s, %s) RETURNING id',
+              (label, json.dumps(formation_data), team_name))
     fid = c.fetchone()[0]
     conn.commit()
     c.close()
@@ -251,3 +263,4 @@ def delete_saved_formation(fid):
     conn.commit()
     c.close()
     conn.close()
+

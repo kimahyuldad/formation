@@ -3,7 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import os
 
 import database
@@ -44,6 +44,10 @@ class PatchMatchModel(BaseModel):
     result: Optional[str] = ''
     memo: Optional[str] = ''
 
+class SaveFormationModel(BaseModel):
+    label: str
+    formation_data: Dict[str, Any]
+
 @app.get("/api/players")
 def read_players():
     return database.fetch_players()
@@ -73,7 +77,9 @@ def remove_player_stats(player_id: int):
 
 @app.post("/api/distribute")
 def distribute_quarters(req: LineupRequestModel):
-    allocations = logic.distribute_quarters(req.attendance_ids, req.core_ids)
+    all_players = database.fetch_players()
+    gk_ids = [p['id'] for p in all_players if p['pos1'] == 'GK' or p['pos2'] == 'GK']
+    allocations = logic.distribute_quarters(req.attendance_ids, req.core_ids, gk_ids)
     return allocations
 
 @app.get("/api/matches")
@@ -130,9 +136,30 @@ def patch_match(match_id: int, data: PatchMatchModel):
     database.update_match_result_memo(match_id, data.result, data.memo)
     return {"id": match_id}
 
+@app.delete("/api/matches/{match_id}")
+def remove_match(match_id: int):
+    database.delete_match(match_id)
+    return {"status": "ok"}
+
 @app.get("/api/matches/{match_id}")
 def read_match(match_id: int):
     return database.get_match(match_id)
+
+# -------- Saved Formations API --------
+
+@app.get("/api/formations/saved")
+def list_saved_formations():
+    return database.fetch_saved_formations()
+
+@app.post("/api/formations/saved")
+def create_saved_formation(data: SaveFormationModel):
+    fid = database.save_formation(data.label, data.formation_data)
+    return {"id": fid}
+
+@app.delete("/api/formations/saved/{fid}")
+def remove_saved_formation(fid: int):
+    database.delete_saved_formation(fid)
+    return {"status": "ok"}
 
 # Ensure static dir exists
 static_dir = os.path.join(os.path.dirname(__file__), "static")

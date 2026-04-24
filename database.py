@@ -44,16 +44,16 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    conn.commit() # Commit table creations first
     
     # Check and add columns if they don't exist
     for col, default in [('opponent', "''"), ('result', "''"), ('memo', "''")]:
         try:
             c.execute(f"ALTER TABLE matches ADD COLUMN {col} TEXT DEFAULT {default}")
-        except psycopg2.Error:
-            conn.rollback() # Need to rollback failed transaction in Postgres
-        else:
             conn.commit()
-    conn.commit()
+        except psycopg2.Error:
+            conn.rollback() # Only rollback the failed ALTER statement
+            
     c.close()
     conn.close()
 

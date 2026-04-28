@@ -250,6 +250,11 @@ document.addEventListener('DOMContentLoaded', () => {
         alert(`"${label}" 포메이션이 저장되었습니다!`);
         fetchSavedFormations();
     });
+
+    // 모달 닫기 이벤트
+    document.getElementById('btnModalClose').addEventListener('click', () => {
+        document.getElementById('matchBoardModal').style.display = 'none';
+    });
 });
 
 function initTabs() {
@@ -280,26 +285,54 @@ async function fetchMatches() {
     const res = await fetch(`${API_BASE}/matches?team=${encodeURIComponent(currentTeam)}`);
     const history = await res.json();
     const ul = document.getElementById('historyList');
-    ul.innerHTML = history.map(h => `
-        <li style="flex-direction: column; gap: 10px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <strong>${h.date_str} vs ${h.opponent || '자체전'}</strong>
-                <div style="display:flex; gap:8px; align-items:center;">
-                    <select class="match-result-select" data-id="${h.id}" style="width:auto; margin-bottom:0; padding:4px 8px;">
-                        <option value="" ${!h.result ? 'selected' : ''}>결과 선택</option>
-                        <option value="승" ${h.result === '승' ? 'selected' : ''}>승리</option>
-                        <option value="무" ${h.result === '무' ? 'selected' : ''}>무승부</option>
-                        <option value="패" ${h.result === '패' ? 'selected' : ''}>패배</option>
-                    </select>
-                    <button class="btn-delete-match" data-id="${h.id}" title="경기 기록 삭제">🗑️</button>
+    ul.innerHTML = '';
+
+    // 가장 최근 경기(또는 미기록 경기 1개)만 폼에 표시
+    const topMatch = history.find(h => !h.result && !h.memo) || history[0];
+
+    if (topMatch) {
+        const h = topMatch;
+        ul.innerHTML = `
+            <li style="flex-direction: column; gap: 10px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <strong>${h.date_str} vs ${h.opponent || '자체전'}</strong>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <select class="match-result-select" data-id="${h.id}" style="width:auto; margin-bottom:0; padding:4px 8px;">
+                            <option value="" ${!h.result ? 'selected' : ''}>결과 선택</option>
+                            <option value="승" ${h.result === '승' ? 'selected' : ''}>승리</option>
+                            <option value="무" ${h.result === '무' ? 'selected' : ''}>무승부</option>
+                            <option value="패" ${h.result === '패' ? 'selected' : ''}>패배</option>
+                        </select>
+                        <button class="btn-delete-match" data-id="${h.id}" title="경기 기록 삭제">🗑️</button>
+                    </div>
                 </div>
-            </div>
-            <div style="display:flex; gap:10px;">
-                <input type="text" class="match-memo-input" data-id="${h.id}" value="${h.memo || ''}" placeholder="경기 메모 (예: 폭우, 부상자 다수)" style="margin-bottom:0;">
-                <button class="btn-primary btn-save-memo" data-id="${h.id}" style="width:auto; padding: 0 15px; white-space:nowrap;">저장</button>
-            </div>
-        </li>
+                <div style="display:flex; gap:10px;">
+                    <input type="text" class="match-memo-input" data-id="${h.id}" value="${h.memo || ''}" placeholder="경기 메모 (예: 폭우, 부상자 다수)" style="margin-bottom:0;">
+                    <button class="btn-primary btn-save-memo" data-id="${h.id}" style="width:auto; padding: 0 15px; white-space:nowrap;">저장</button>
+                </div>
+            </li>
+        `;
+    }
+
+    const recordList = document.getElementById('matchRecordList');
+    recordList.innerHTML = history.filter(h => h.result || h.memo).map((h, idx) => `
+        <div style="display:flex; align-items:center; gap:8px; font-size:1rem; flex-wrap:wrap; padding:5px 0; border-bottom:1px solid rgba(255,255,255,0.1);">
+            <strong style="color:white; margin-right:5px;">${idx + 1}.</strong>
+            <span style="font-weight:bold; color:white;">${h.date_str} vs ${h.opponent || '자체전'}</span>
+            ${h.result ? `<span style="font-weight:bold; color:${h.result==='승'?'#3b82f6':h.result==='패'?'#ef4444':'#10b981'}; margin-left:5px;">${h.result}</span>` : ''}
+            ${h.memo ? `<span style="color:#fbbf24; margin-left:5px;">${h.memo}</span>` : ''}
+            <button class="btn-view-board" data-id="${h.id}" style="margin-left:auto; background:transparent; border:none; color:#a3e635; cursor:pointer; font-weight:bold;">작전판 보기</button>
+            <button class="btn-delete-match" data-id="${h.id}" style="background:transparent; border:none; color:#ef4444; cursor:pointer; font-weight:bold;">삭제</button>
+        </div>
     `).join('');
+
+    document.querySelectorAll('.btn-view-board').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const matchId = e.target.dataset.id;
+            const match = history.find(m => m.id == matchId);
+            if(match) showMatchBoardModal(match);
+        });
+    });
 
     document.querySelectorAll('.btn-save-memo').forEach(btn => {
         btn.addEventListener('click', async (e) => {
@@ -313,7 +346,7 @@ async function fetchMatches() {
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ result, memo })
             });
-            alert('기록이 저장되었습니다.');
+            fetchMatches(); // 즉각 반영을 위해 재호출
         });
     });
 
@@ -770,24 +803,40 @@ async function fetchStats() {
         };
     }).filter(s => s.quarters > 0);
 
-    finalStats.sort((a, b) => b.quarters - a.quarters);
+    finalStats.sort((a, b) => {
+        if (b.match_days !== a.match_days) return b.match_days - a.match_days; // 1순위: 출전 일수
+        return b.quarters - a.quarters; // 2순위: 쿼터 수
+    });
 
-    const tbody = document.getElementById('statsBody');
-    tbody.innerHTML = '';
-    finalStats.forEach(s => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>
-                <div style="font-weight: 600;">${s.name}</div>
-                <div style="font-size: 0.75rem; color: var(--text-secondary);">${s.back_number ? `No.${s.back_number}` : ''}</div>
-            </td>
-            <td>${s.match_days}회</td>
-            <td>${s.quarters}쿼터 (${s.quarters * 25}분)</td>
-            <td style="text-align:center;">
+    const grid = document.getElementById('statsGrid');
+    grid.innerHTML = '';
+    
+    if (finalStats.length === 0) {
+        grid.innerHTML = '<div style="grid-column: 1 / -1; text-align:center; color:var(--text-secondary);">통계 기록이 없습니다.</div>';
+    }
+
+    finalStats.forEach((s, idx) => {
+        const rank = idx + 1;
+        let rankClass = '';
+        if (rank === 1) rankClass = 'stat-rank-1';
+        else if (rank === 2) rankClass = 'stat-rank-2';
+        else if (rank === 3) rankClass = 'stat-rank-3';
+
+        const card = document.createElement('div');
+        card.className = 'stat-card';
+        card.innerHTML = `
+            <div class="stat-rank ${rankClass}">${rank}</div>
+            <div class="stat-info">
+                <div class="stat-name">${s.name} <span style="font-size:0.75rem; color:var(--text-secondary);">${s.back_number ? `No.${s.back_number}` : ''}</span></div>
+                <div class="stat-details">
+                    <span style="color:var(--accent-color); font-weight:600;">출전 ${s.match_days}회</span> &middot; ${s.quarters}쿼터 (${s.quarters * 25}분)
+                </div>
+            </div>
+            <div class="stat-actions">
                 <button class="btn-delete-stats" data-id="${s.id}" style="background:transparent; border:none; cursor:pointer; color:#ef4444; font-size:1.2rem;" title="기록 삭제">🗑️</button>
-            </td>
+            </div>
         `;
-        tbody.appendChild(tr);
+        grid.appendChild(card);
     });
 
     document.querySelectorAll('.btn-delete-stats').forEach(btn => {
@@ -896,4 +945,92 @@ function loadSavedFormation(data) {
     }
     alert('포메이션을 불러왔습니다!');
     renderAllQuarters();
+}
+
+function showMatchBoardModal(match) {
+    const modal = document.getElementById('matchBoardModal');
+    const title = document.getElementById('modalMatchTitle');
+    const captureArea = document.getElementById('modalCaptureArea');
+
+    title.innerText = `${match.date_str} vs ${match.opponent || '자체전'} 작전판`;
+    captureArea.innerHTML = '';
+
+    const lData = match.lineup_data;
+    if(!lData || !lData.allocations) {
+        captureArea.innerHTML = '<div style="color:var(--text-secondary); text-align:center;">기록된 작전판 데이터가 없습니다.</div>';
+        modal.style.display = 'flex';
+        return;
+    }
+
+    // confirmed된 쿼터만 표시
+    const confirmed = lData.confirmed || [1, 2, 3, 4];
+    
+    // Sort confirmed quarters
+    const sortedQ = [...confirmed].sort((a,b) => a-b);
+
+    sortedQ.forEach(q => {
+        const qForm = lData.formations ? lData.formations[q] : '4231';
+        const qMemo = lData.memos ? lData.memos[q] : '';
+        const qPids = lData.allocations[q] || [];
+        const qPos = lData.positions ? lData.positions[q] : {};
+
+        let wrapper = document.createElement('div');
+        wrapper.className = 'quarter-wrapper';
+        wrapper.innerHTML = `
+            <div class="q-header">
+                <h3 style="margin:0; font-size:1.1rem; color:var(--accent-color);">${q}쿼터 (${qForm})</h3>
+            </div>
+            <div class="pitch-container" style="flex-grow:0; aspect-ratio:2/3; height:auto; min-height:400px; margin-bottom:0;">
+                <div class="pitch-memo">${qMemo ? `Q${q}: ${qMemo}` : ''}</div>
+                <div class="pitch">
+                    <div class="pitch-center-circle"></div>
+                    <div class="pitch-center-line"></div>
+                    <div class="pitch-box-top"></div>
+                    <div class="pitch-box-bottom"></div>
+                    <div id="modalPitch-${q}" style="width:100%; height:100%; position:absolute; top:0; left:0;"></div>
+                </div>
+            </div>
+        `;
+        captureArea.appendChild(wrapper);
+
+        const pitch = wrapper.querySelector(`#modalPitch-${q}`);
+        let hasGk = false;
+
+        qPids.forEach(pid => {
+            pid = Number(pid);
+            const player = players.find(p => p.id === pid);
+            if(!player) return;
+
+            const pos = qPos[pid];
+            if(pos && pos.x >= 0) {
+                let el = document.createElement('div');
+                el.className = 'player-card';
+                // Find role to get color
+                let formation = formationTemplates[qForm];
+                let spot = formation ? formation.find(s => s.x === pos.x && s.y === pos.y) : null;
+                let role = spot ? spot.role : (player.pos1 || 'none');
+                let colorClass = getPosColorClass(role);
+
+                if (role === 'GK') hasGk = true;
+
+                el.innerHTML = `<div class="p-cd-circle ${colorClass}">${player.back_number || '?'}</div><span class="p-cd-name">${player.name}</span>`;
+                el.style.left = `${pos.x}%`;
+                el.style.top = `${pos.y}%`;
+                el.style.cursor = 'default';
+                pitch.appendChild(el);
+            }
+        });
+
+        if(!hasGk && qPids.length > 0) {
+            let marker = document.createElement('div');
+            marker.className = 'player-card gk-marker';
+            marker.innerHTML = `<div class="p-cd-circle gk-circle">GK</div><span class="p-cd-name">골키퍼</span>`;
+            marker.style.left = '50%';
+            marker.style.top = '92%';
+            marker.style.cursor = 'default';
+            pitch.appendChild(marker);
+        }
+    });
+
+    modal.style.display = 'flex';
 }

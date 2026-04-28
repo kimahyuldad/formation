@@ -87,7 +87,7 @@ def distribute_quarters(req: LineupRequestModel, team: str = '쌍팔클럽'):
 
 @app.get("/api/matches")
 def read_matches(team: str = '쌍팔클럽'):
-    return database.fetch_matches(team)
+    return database.fetch_all_matches(team)
 
 @app.get("/api/stats")
 def read_stats(team: str = '쌍팔클럽'):

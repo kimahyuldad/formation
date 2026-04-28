@@ -641,3 +641,118 @@ button {
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(239, 68, 68, 0.5);
 }
+
+/* -------- Modal -------- */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(5px);
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-content {
+    background: var(--bg-color);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    width: 90%;
+    max-width: 800px;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 20px;
+    position: relative;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.modal-header h2 {
+    margin: 0;
+    color: var(--accent-color);
+}
+
+.btn-close {
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
+    font-size: 2rem;
+    cursor: pointer;
+    line-height: 1;
+}
+.btn-close:hover {
+    color: white;
+}
+
+/* -------- Stats Grid -------- */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+}
+
+@media (max-width: 600px) {
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.stat-card {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 15px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    transition: transform 0.2s, background 0.2s;
+}
+
+.stat-card:hover {
+    background: rgba(15, 23, 42, 0.8);
+    transform: translateY(-2px);
+    border-color: var(--accent-color);
+}
+
+.stat-rank {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--primary-color);
+    min-width: 40px;
+    text-align: center;
+}
+
+.stat-rank-1 { color: #fbbf24; } /* Gold */
+.stat-rank-2 { color: #94a3b8; } /* Silver */
+.stat-rank-3 { color: #b45309; } /* Bronze */
+
+.stat-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.stat-name {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.stat-details {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.stat-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}

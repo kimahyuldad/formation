@@ -157,11 +157,18 @@
 
         <!-- View 3: History -->
         <section id="historyView" class="view">
-            <div class="panel glass-panel">
+            <div class="panel glass-panel" style="margin-bottom: 20px;">
                 <h2>저장된 라인업 히스토리</h2>
                 <ul id="historyList" class="history-list">
                     <!-- JS populated -->
                 </ul>
+            </div>
+            
+            <div class="panel glass-panel">
+                <h2 style="color: white; font-weight: bold;">경기기록</h2>
+                <div id="matchRecordList" style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">
+                    <!-- JS populated -->
+                </div>
             </div>
         </section>
 
@@ -172,24 +179,25 @@
                     <h2 style="margin:0;">선수 통계</h2>
                     <button id="btnDeleteAllStats" class="btn-delete-all">🗑️ 전체 기록 일괄삭제</button>
                 </div>
-                <div class="table-responsive">
-                    <table class="stats-table">
-                        <thead>
-                            <tr>
-                                <th>이름<br><span style="font-size:0.75rem; font-weight:400;">(등번호)</span></th>
-                                <th>출전 일수</th>
-                                <th>출전 시간 (분)</th>
-                                <th>기록 삭제</th>
-                            </tr>
-                        </thead>
-                        <tbody id="statsBody">
-                            <!-- JS populated -->
-                        </tbody>
-                    </table>
+                <div id="statsGrid" class="stats-grid">
+                    <!-- JS populated -->
                 </div>
             </div>
         </section>
     </main>
+
+    <!-- Match Board Modal -->
+    <div id="matchBoardModal" class="modal-overlay" style="display:none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalMatchTitle">경기 작전판</h2>
+                <button id="btnModalClose" class="btn-close">&times;</button>
+            </div>
+            <div id="modalCaptureArea" class="board-grid">
+                <!-- JS populated 4 quarters for modal -->
+            </div>
+        </div>
+    </div>
 
     <script src="/static/app.js"></script>
 </body>

@@ -75,8 +75,9 @@
             </div>
 
             <div class="panel glass-panel">
-                <div class="panel-header">
-                    <h2>참석자 명단 <span id="attendanceCounter" style="font-size: 0.9rem; color: var(--accent-color); margin-left: 10px;">(0명 선택됨)</span></h2>
+                <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <h2 style="margin:0;">참석자 명단 <span id="attendanceCounter" style="font-size: 0.9rem; color: var(--accent-color); margin-left: 10px;">(0명 선택됨)</span></h2>
+                    <button id="btnDeselectAll" class="btn-primary" style="width:auto; padding:6px 12px; font-size:0.85rem; background:#475569;">전체 선택 해제</button>
                 </div>
                 <div class="instruction">
                     ✓: 참석 &nbsp; / &nbsp; ★: 핵심(3쿼터 이상 보장)
@@ -158,10 +159,24 @@
         <!-- View 3: History -->
         <section id="historyView" class="view">
             <div class="panel glass-panel" style="margin-bottom: 20px;">
-                <h2>저장된 라인업 히스토리</h2>
-                <ul id="historyList" class="history-list">
-                    <!-- JS populated -->
-                </ul>
+                <h2>기록 입력</h2>
+                <div style="background:rgba(255,255,255,0.05); padding:15px; border-radius:8px; display:flex; flex-direction:column; gap:10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <select id="recordMatchSelect" style="width:100%; margin-bottom:0; padding:8px; font-weight:bold; font-size:1.1rem; color:var(--accent-color); background:transparent; border:1px solid var(--panel-border);">
+                            <!-- JS populated -->
+                        </select>
+                        <select id="recordResultSelect" style="width:auto; margin-bottom:0; padding:8px; margin-left:10px; flex-shrink:0;">
+                            <option value="">결과 선택</option>
+                            <option value="승">승리</option>
+                            <option value="무">무승부</option>
+                            <option value="패">패배</option>
+                        </select>
+                    </div>
+                    <div style="display:flex; gap:10px;">
+                        <input type="text" id="recordMemoInput" placeholder="경기 메모 (예: 매너 굿, 부상자 다수)" style="margin-bottom:0; flex-grow:1;">
+                        <button id="btnSaveRecord" class="btn-primary" style="width:auto; padding: 0 20px; white-space:nowrap;">저장</button>
+                    </div>
+                </div>
             </div>
             
             <div class="panel glass-panel">

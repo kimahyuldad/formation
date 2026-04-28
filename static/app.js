@@ -255,6 +255,34 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnModalClose').addEventListener('click', () => {
         document.getElementById('matchBoardModal').style.display = 'none';
     });
+
+    // 기록 저장 이벤트
+    document.getElementById('btnSaveRecord')?.addEventListener('click', async () => {
+        const matchId = document.getElementById('recordMatchSelect').value;
+        if (!matchId) return alert('저장할 경기를 선택해주세요.');
+        const result = document.getElementById('recordResultSelect').value;
+        const memo = document.getElementById('recordMemoInput').value;
+        
+        await fetch(`${API_BASE}/matches/${matchId}`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ result, memo })
+        });
+        alert('기록이 바로 저장되었습니다!');
+        fetchMatches();
+    });
+
+    // 참석자 명단 전체 선택 해제 이벤트
+    document.getElementById('btnDeselectAll')?.addEventListener('click', () => {
+        if(attendances.size === 0) return;
+        if(confirm('선택된 참석자 명단을 모두 초기화하시겠습니까?')) {
+            attendances.clear();
+            cores.clear();
+            saveToLocal();
+            renderPlayerList();
+            updateAttendanceCounter();
+        }
+    });
 });
 
 function initTabs() {
@@ -284,81 +312,53 @@ async function fetchPlayers() {
 async function fetchMatches() {
     const res = await fetch(`${API_BASE}/matches?team=${encodeURIComponent(currentTeam)}`);
     const history = await res.json();
-    const ul = document.getElementById('historyList');
-    ul.innerHTML = '';
-
-    // 가장 최근 경기(또는 미기록 경기 1개)만 폼에 표시
-    const topMatch = history.find(h => !h.result && !h.memo) || history[0];
-
-    if (topMatch) {
-        const h = topMatch;
-        ul.innerHTML = `
-            <li style="flex-direction: column; gap: 10px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <strong>${h.date_str} vs ${h.opponent || '자체전'}</strong>
-                    <div style="display:flex; gap:8px; align-items:center;">
-                        <select class="match-result-select" data-id="${h.id}" style="width:auto; margin-bottom:0; padding:4px 8px;">
-                            <option value="" ${!h.result ? 'selected' : ''}>결과 선택</option>
-                            <option value="승" ${h.result === '승' ? 'selected' : ''}>승리</option>
-                            <option value="무" ${h.result === '무' ? 'selected' : ''}>무승부</option>
-                            <option value="패" ${h.result === '패' ? 'selected' : ''}>패배</option>
-                        </select>
-                        <button class="btn-delete-match" data-id="${h.id}" title="경기 기록 삭제">🗑️</button>
-                    </div>
-                </div>
-                <div style="display:flex; gap:10px;">
-                    <input type="text" class="match-memo-input" data-id="${h.id}" value="${h.memo || ''}" placeholder="경기 메모 (예: 폭우, 부상자 다수)" style="margin-bottom:0;">
-                    <button class="btn-primary btn-save-memo" data-id="${h.id}" style="width:auto; padding: 0 15px; white-space:nowrap;">저장</button>
-                </div>
-            </li>
-        `;
+    
+    // 기록 입력 셀렉트 박스 갱신
+    const select = document.getElementById('recordMatchSelect');
+    if (select) {
+        select.innerHTML = history.map(h => `<option value="${h.id}">${h.date_str} vs ${h.opponent || '자체전'}</option>`).join('');
+        select.onchange = () => {
+            const m = history.find(x => x.id == select.value);
+            document.getElementById('recordResultSelect').value = m ? (m.result || '') : '';
+            document.getElementById('recordMemoInput').value = m ? (m.memo || '') : '';
+        };
+        // 초기값 설정
+        if (history.length > 0) {
+            select.dispatchEvent(new Event('change'));
+        }
     }
 
     const recordList = document.getElementById('matchRecordList');
-    recordList.innerHTML = history.filter(h => h.result || h.memo).map((h, idx) => `
-        <div style="display:flex; align-items:center; gap:8px; font-size:1rem; flex-wrap:wrap; padding:5px 0; border-bottom:1px solid rgba(255,255,255,0.1);">
-            <strong style="color:white; margin-right:5px;">${idx + 1}.</strong>
-            <span style="font-weight:bold; color:white;">${h.date_str} vs ${h.opponent || '자체전'}</span>
-            ${h.result ? `<span style="font-weight:bold; color:${h.result==='승'?'#3b82f6':h.result==='패'?'#ef4444':'#10b981'}; margin-left:5px;">${h.result}</span>` : ''}
-            ${h.memo ? `<span style="color:#fbbf24; margin-left:5px;">${h.memo}</span>` : ''}
-            <button class="btn-view-board" data-id="${h.id}" style="margin-left:auto; background:transparent; border:none; color:#a3e635; cursor:pointer; font-weight:bold;">작전판 보기</button>
-            <button class="btn-delete-match" data-id="${h.id}" style="background:transparent; border:none; color:#ef4444; cursor:pointer; font-weight:bold;">삭제</button>
-        </div>
-    `).join('');
+    if (recordList) {
+        recordList.innerHTML = history.filter(h => h.result || h.memo).map((h, idx) => `
+            <div style="display:flex; align-items:center; gap:8px; font-size:1rem; flex-wrap:wrap; padding:5px 0; border-bottom:1px solid rgba(255,255,255,0.1);">
+                <strong style="color:white; margin-right:5px;">${idx + 1}.</strong>
+                <span style="font-weight:bold; color:white;">${h.date_str} vs ${h.opponent || '자체전'}</span>
+                ${h.result ? `<span style="font-weight:bold; color:${h.result==='승'?'#3b82f6':h.result==='패'?'#ef4444':'#10b981'}; margin-left:5px;">${h.result}</span>` : ''}
+                ${h.memo ? `<span style="color:#fbbf24; margin-left:5px;">${h.memo}</span>` : ''}
+                <button class="btn-view-board" data-id="${h.id}" style="margin-left:auto; background:transparent; border:none; color:#a3e635; cursor:pointer; font-weight:bold;">작전판 보기</button>
+                <button class="btn-delete-match" data-id="${h.id}" style="background:transparent; border:none; color:#ef4444; cursor:pointer; font-weight:bold;">삭제</button>
+            </div>
+        `).join('');
 
-    document.querySelectorAll('.btn-view-board').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const matchId = e.target.dataset.id;
-            const match = history.find(m => m.id == matchId);
-            if(match) showMatchBoardModal(match);
-        });
-    });
-
-    document.querySelectorAll('.btn-save-memo').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            const matchId = e.target.dataset.id;
-            const li = e.target.closest('li');
-            const result = li.querySelector('.match-result-select').value;
-            const memo = li.querySelector('.match-memo-input').value;
-
-            await fetch(`${API_BASE}/matches/${matchId}`, {
-                method: 'PATCH',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ result, memo })
+        document.querySelectorAll('.btn-view-board').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const matchId = e.target.dataset.id;
+                const match = history.find(m => m.id == matchId);
+                if(match) showMatchBoardModal(match);
             });
-            fetchMatches(); // 즉각 반영을 위해 재호출
         });
-    });
 
-    document.querySelectorAll('.btn-delete-match').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            const matchId = e.target.closest('button').dataset.id;
-            if (confirm('이 경기 기록을 삭제하시겠습니까?\n(해당 경기의 통계 기록도 함께 삭제됩니다)')) {
-                await fetch(`${API_BASE}/matches/${matchId}`, { method: 'DELETE' });
-                fetchMatches();
-            }
+        document.querySelectorAll('.btn-delete-match').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const matchId = e.target.dataset.id;
+                if (confirm('이 경기 기록을 삭제하시겠습니까?\n(해당 경기의 통계 기록도 함께 삭제됩니다)')) {
+                    await fetch(`${API_BASE}/matches/${matchId}`, { method: 'DELETE' });
+                    fetchMatches();
+                }
+            });
         });
-    });
+    }
 }
 
 function renderPlayerList() {
